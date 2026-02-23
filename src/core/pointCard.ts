@@ -29,8 +29,8 @@ export function calcPointCard(currentPoints: number, rewards: Reward[]): PointCa
 		: 500;
 
 	const maxSquareIndex = Math.ceil(maxPoints / PTS_PER_SQUARE) - 1;
-	const totalRows = Math.ceil((maxSquareIndex + 1) / COLS);
-	const totalSquares = totalRows * COLS;
+	const totalSquares = maxSquareIndex + 1;
+	const totalRows = Math.ceil(totalSquares / COLS);
 	const filledSquares = Math.floor(currentPoints / PTS_PER_SQUARE);
 
 	const rewardBySquare = new Map<number, Reward>();
@@ -40,8 +40,10 @@ export function calcPointCard(currentPoints: number, rewards: Reward[]): PointCa
 	}
 
 	const rows: RowState[] = Array.from({ length: totalRows }, (_, rowIndex) => {
-		const squares: SquareState[] = Array.from({ length: COLS }, (_, colIndex) => {
-			const squareIndex = rowIndex * COLS + colIndex;
+		const rowStart = rowIndex * COLS;
+		const rowEnd = Math.min(rowStart + COLS, totalSquares);
+		const squares: SquareState[] = Array.from({ length: rowEnd - rowStart }, (_, colIndex) => {
+			const squareIndex = rowStart + colIndex;
 			return {
 				filled: squareIndex < filledSquares,
 				reward: rewardBySquare.get(squareIndex) ?? null,
