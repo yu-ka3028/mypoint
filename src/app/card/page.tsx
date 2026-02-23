@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { createClient } from "@/lib/supabase/client";
 import { PointCardAnimated } from "@/components/point-card/PointCardAnimated";
 import { BottomNav } from "@/components/BottomNav";
