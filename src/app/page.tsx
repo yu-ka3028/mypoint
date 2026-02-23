@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { BottomNav } from "@/components/BottomNav";
 import { useRoutineInit } from "@/hooks/useRoutineInit";
 import { calcRoutinePoints, getJSTDate, getJSTWeek } from "@/core/tasks";
+import { addStamp, removeStamp } from "@/lib/stampBadge";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { Task, DailyRoutineStatus, WeeklyRoutineStatus } from "@/types";
 
 type Tab = "today" | "weekly" | "someday";
@@ -109,6 +111,8 @@ export default function Home() {
 				{ onConflict: "user_id,task_id,completion_date" },
 			);
 			await supabase.rpc("increment_points", { p_user_id: userId, p_points: task.points, p_type: task.type });
+			toast(`+${task.points}pt ポイントゲット！`);
+			addStamp();
 		} else {
 			if (task.type === "daily_routine") {
 				await supabase.from("daily_routine_status")
@@ -123,6 +127,7 @@ export default function Home() {
 				.delete()
 				.eq("user_id", userId).eq("task_id", task.id).eq("completion_date", today);
 			await supabase.rpc("increment_points", { p_user_id: userId, p_points: -task.points, p_type: task.type });
+			removeStamp();
 		}
 
 		await fetchAll();
