@@ -1,4 +1,5 @@
 const KEY = "pendingStamps";
+const PREV_POINTS_KEY = "prevCardPoints";
 
 export function getStampCount(): number {
 	if (typeof window === "undefined") return 0;
@@ -18,4 +19,14 @@ export function removeStamp(): void {
 export function resetStamps(): void {
 	localStorage.setItem(KEY, "0");
 	window.dispatchEvent(new Event("stampUpdate"));
+}
+
+export function getPrevCardPoints(): number | null {
+	if (typeof window === "undefined") return null;
+	const v = localStorage.getItem(PREV_POINTS_KEY);
+	return v === null ? null : parseInt(v, 10);
+}
+
+export function setPrevCardPoints(points: number): void {
+	localStorage.setItem(PREV_POINTS_KEY, String(points));
 }

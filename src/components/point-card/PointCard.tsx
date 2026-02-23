@@ -18,7 +18,7 @@ export function PointCard({ currentPoints, rewards }: Props) {
 	const [tooltip, setTooltip] = useState<TooltipState>(null);
 
 	return (
-		<div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-1">
+		<div className="bg-white rounded-2xl border border-gray-100 p-3 sm:p-6 space-y-1">
 			{rows.map((row, rowIndex) => (
 				<div key={rowIndex} className="grid grid-cols-8 gap-1">
 					{row.squares.map((square, colIndex) => {
