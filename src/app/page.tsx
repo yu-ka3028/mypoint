@@ -2,41 +2,551 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { PointCard } from "@/components/point-card/PointCard";
-import { useEffect, useState } from "react";
-import type { User } from "@supabase/supabase-js";
+import { BottomNav } from "@/components/BottomNav";
+import { useRoutineInit } from "@/hooks/useRoutineInit";
+import { calcRoutinePoints, getJSTDate, getJSTWeek } from "@/core/tasks";
+import { useEffect, useRef, useState } from "react";
+import type { Task, DailyRoutineStatus, WeeklyRoutineStatus } from "@/types";
 
-const SAMPLE_REWARDS = [
-	{ id: "1", label: "ケーキ", points: 200 },
-	{ id: "2", label: "映画", points: 500 },
-];
+type Tab = "today" | "weekly" | "someday";
+
+type AddTaskForm = {
+	title: string;
+	type: Task["type"];
+	points: number;
+	deadline: string;
+};
+
+type EditTaskForm = {
+	id: string;
+	type: Task["type"];
+	title: string;
+	points: number;
+	deadline: string;
+};
+
+const TAB_DEFAULT_TYPE: Record<Tab, Task["type"]> = {
+	today: "daily_routine",
+	weekly: "weekly_routine",
+	someday: "someday",
+};
+
+const DEBOUNCE_MS = 500;
 
 export default function Home() {
 	const supabase = createClient();
-	const [user, setUser] = useState<User | null>(null);
+	const [userId, setUserId] = useState("");
+	const [tab, setTab] = useState<Tab>("today");
+	const [tasks, setTasks] = useState<Task[]>([]);
+	const [dailyStatus, setDailyStatus] = useState<DailyRoutineStatus[]>([]);
+	const [weeklyStatus, setWeeklyStatus] = useState<WeeklyRoutineStatus[]>([]);
+	const [todayCompletions, setTodayCompletions] = useState<{ task_id: string }[]>([]);
+	const [showForm, setShowForm] = useState(false);
+	const [form, setForm] = useState<AddTaskForm>({ title: "", type: "daily_routine", points: 0, deadline: "" });
+	const [showPointsInput, setShowPointsInput] = useState(false);
+	const [editTask, setEditTask] = useState<EditTaskForm | null>(null);
+	const [showEditPointsInput, setShowEditPointsInput] = useState(false);
+	const [confirmDelete, setConfirmDelete] = useState(false);
+	// 楽観的更新用: task_id → 表示上の完了状態
+	const [optimisticCompleted, setOptimisticCompleted] = useState<Record<string, boolean>>({});
+	const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+	useRoutineInit(userId);
 
 	useEffect(() => {
 		supabase.auth.getUser().then(({ data }) => {
-			setUser(data.user);
+			if (data.user) setUserId(data.user.id);
 		});
 	}, [supabase]);
+
+	useEffect(() => {
+		if (!userId) return;
+		fetchAll();
+	}, [userId]);
+
+	const fetchAll = async () => {
+		const today = getJSTDate();
+		const week = getJSTWeek();
+
+		const [tasksRes, dailyRes, weeklyRes, completionsRes] = await Promise.all([
+			supabase.from("tasks").select("*").eq("user_id", userId).eq("is_active", true).order("created_at"),
+			supabase.from("daily_routine_status").select("*").eq("user_id", userId).eq("target_date", today),
+			supabase.from("weekly_routine_status").select("*").eq("user_id", userId).eq("target_week", week),
+			supabase.from("task_completions").select("task_id").eq("user_id", userId).eq("completion_date", today),
+		]);
+		if (tasksRes.data) setTasks(tasksRes.data as Task[]);
+		if (dailyRes.data) setDailyStatus(dailyRes.data as DailyRoutineStatus[]);
+		if (weeklyRes.data) setWeeklyStatus(weeklyRes.data as WeeklyRoutineStatus[]);
+		if (completionsRes.data) setTodayCompletions(completionsRes.data);
+	};
+
+	const isCompleted = (task: Task): boolean => {
+		// 楽観的更新が優先
+		if (task.id in optimisticCompleted) return optimisticCompleted[task.id];
+		if (task.type === "daily_routine") return dailyStatus.some((s) => s.task_id === task.id && s.completed);
+		if (task.type === "weekly_routine") return weeklyStatus.some((s) => s.task_id === task.id && s.completed);
+		return todayCompletions.some((c) => c.task_id === task.id);
+	};
+
+	const persistToggle = async (task: Task, completed: boolean) => {
+		const today = getJSTDate();
+		const week = getJSTWeek();
+
+		if (completed) {
+			if (task.type === "daily_routine") {
+				await supabase.from("daily_routine_status").upsert(
+					{ user_id: userId, task_id: task.id, target_date: today, completed: true, completed_at: new Date().toISOString() },
+					{ onConflict: "user_id,task_id,target_date" },
+				);
+			} else if (task.type === "weekly_routine") {
+				await supabase.from("weekly_routine_status").upsert(
+					{ user_id: userId, task_id: task.id, target_week: week, completed: true, completed_at: new Date().toISOString() },
+					{ onConflict: "user_id,task_id,target_week" },
+				);
+			}
+			await supabase.from("task_completions").upsert(
+				{ user_id: userId, task_id: task.id, points_earned: task.points, completion_date: today, completion_week: week },
+				{ onConflict: "user_id,task_id,completion_date" },
+			);
+			await supabase.rpc("increment_points", { p_user_id: userId, p_points: task.points, p_type: task.type });
+		} else {
+			if (task.type === "daily_routine") {
+				await supabase.from("daily_routine_status")
+					.update({ completed: false, completed_at: null })
+					.eq("user_id", userId).eq("task_id", task.id).eq("target_date", today);
+			} else if (task.type === "weekly_routine") {
+				await supabase.from("weekly_routine_status")
+					.update({ completed: false, completed_at: null })
+					.eq("user_id", userId).eq("task_id", task.id).eq("target_week", week);
+			}
+			await supabase.from("task_completions")
+				.delete()
+				.eq("user_id", userId).eq("task_id", task.id).eq("completion_date", today);
+			await supabase.rpc("increment_points", { p_user_id: userId, p_points: -task.points, p_type: task.type });
+		}
+
+		await fetchAll();
+		setOptimisticCompleted((prev) => {
+			const next = { ...prev };
+			delete next[task.id];
+			return next;
+		});
+	};
+
+	const handleToggle = (task: Task) => {
+		const newState = !isCompleted(task);
+
+		// 即時UI反映
+		setOptimisticCompleted((prev) => ({ ...prev, [task.id]: newState }));
+
+		// デバウンス: 500ms以内の再トグルはタイマーリセット
+		clearTimeout(debounceTimers.current[task.id]);
+		debounceTimers.current[task.id] = setTimeout(() => {
+			persistToggle(task, newState);
+		}, DEBOUNCE_MS);
+	};
+
+	const openEdit = (task: Task) => {
+		setEditTask({ id: task.id, type: task.type, title: task.title, points: task.points, deadline: task.deadline ?? "" });
+		setShowEditPointsInput(task.points > 0);
+		setConfirmDelete(false);
+	};
+
+	const handleSaveEdit = async () => {
+		if (!editTask || !editTask.title.trim()) return;
+		const isRoutine = editTask.type === "daily_routine" || editTask.type === "weekly_routine";
+		await supabase.from("tasks").update({
+			title: editTask.title.trim(),
+			...(isRoutine ? {} : { points: editTask.points, deadline: editTask.deadline || null }),
+		}).eq("id", editTask.id);
+		await fetchAll();
+		setEditTask(null);
+	};
+
+	const handleDeleteTask = async () => {
+		if (!editTask) return;
+		const task = tasks.find((t) => t.id === editTask.id);
+		if (!task) return;
+		await supabase.from("tasks").update({ is_active: false }).eq("id", editTask.id);
+		const isRoutine = task.type === "daily_routine" || task.type === "weekly_routine";
+		if (isRoutine) {
+			const remaining = tasks.filter((t) => t.type === task.type && t.id !== task.id);
+			if (remaining.length > 0) {
+				await supabase.from("tasks")
+					.update({ points: calcRoutinePoints(remaining.length) })
+					.in("id", remaining.map((t) => t.id));
+			}
+		}
+		await fetchAll();
+		setEditTask(null);
+	};
+
+	const handleAddTask = async () => {
+		if (!form.title.trim()) return;
+
+		const type = form.type;
+		const isRoutine = type === "daily_routine" || type === "weekly_routine";
+		const sameTypeTasks = tasks.filter((t) => t.type === type);
+		const newCount = sameTypeTasks.length + 1;
+		const points = isRoutine ? calcRoutinePoints(newCount) : form.points;
+
+		if (isRoutine && sameTypeTasks.length > 0) {
+			await supabase
+				.from("tasks")
+				.update({ points: calcRoutinePoints(newCount) })
+				.in("id", sameTypeTasks.map((t) => t.id));
+		}
+
+		await supabase.from("tasks").insert({
+			user_id: userId,
+			title: form.title.trim(),
+			type,
+			points,
+			deadline: form.deadline || null,
+			is_active: true,
+		});
+
+		setForm({ title: "", type: TAB_DEFAULT_TYPE[tab], points: 0, deadline: "" });
+		setShowForm(false);
+		await fetchAll();
+	};
 
 	const handleLogout = async () => {
 		await supabase.auth.signOut();
 		window.location.href = "/login";
 	};
 
+	const todayTasks = tasks.filter((t) => t.type === "daily_routine" || t.type === "urgent");
+	const weeklyTasks = tasks.filter((t) => t.type === "weekly_routine");
+	const somedayTasks = tasks.filter((t) => t.type === "someday");
+	const visibleTasks = tab === "today" ? todayTasks : tab === "weekly" ? weeklyTasks : somedayTasks;
+	const dailyRoutineTasks = todayTasks.filter((t) => t.type === "daily_routine");
+	const urgentTasks = todayTasks.filter((t) => t.type === "urgent");
+
+	const openForm = () => {
+		setForm({ title: "", type: TAB_DEFAULT_TYPE[tab], points: 0, deadline: "" });
+		setShowPointsInput(false);
+		setShowForm(true);
+	};
+
 	return (
-		<div className="min-h-screen bg-gray-50 p-4">
+		<div className="min-h-screen bg-gray-50 pb-20">
 			<div className="max-w-md mx-auto">
-				<div className="flex items-center justify-between py-4">
+				{/* Header */}
+				<div className="flex items-center justify-between px-4 py-4 bg-white border-b border-gray-200">
 					<h1 className="text-xl font-bold text-gray-900">mypoint</h1>
 					<Button variant="outline" size="sm" onClick={handleLogout}>
 						ログアウト
 					</Button>
 				</div>
-				<p className="text-sm text-gray-500 mb-4">{user?.email}</p>
-				<PointCard currentPoints={250} rewards={SAMPLE_REWARDS} />
+
+				{/* Tabs */}
+				<div className="flex bg-white border-b border-gray-200">
+					{(["today", "weekly", "someday"] as Tab[]).map((t) => (
+						<button
+							key={t}
+							onClick={() => { setTab(t); setShowForm(false); }}
+							className={`flex-1 py-3 text-sm font-medium ${
+								tab === t ? "text-indigo-600 border-b-2 border-indigo-600" : "text-gray-500"
+							}`}
+						>
+							{t === "today" ? "今日" : t === "weekly" ? "今週" : "いつか"}
+						</button>
+					))}
+				</div>
+
+				<div className="px-4 pt-4">
+					<Button variant="outline" size="sm" className="w-full mb-4" onClick={openForm}>
+						+ タスク追加
+					</Button>
+
+					{/* タスク追加モーダル */}
+					{showForm && (
+						<div className="fixed inset-0 bg-black/40 flex items-end z-50" onClick={() => setShowForm(false)}>
+							<div className="bg-white w-full max-w-md mx-auto rounded-t-xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+								<h2 className="font-semibold text-gray-900">タスクを追加</h2>
+								<input
+									className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+									placeholder="タスク名"
+									value={form.title}
+									onChange={(e) => setForm({ ...form, title: e.target.value })}
+									autoFocus
+								/>
+								{tab === "today" && (
+									<select
+										className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+										value={form.type}
+										onChange={(e) => setForm({ ...form, type: e.target.value as Task["type"] })}
+									>
+										<option value="daily_routine">毎日ルーティン</option>
+										<option value="urgent">緊急</option>
+									</select>
+								)}
+								{(form.type === "urgent" || form.type === "someday") && (
+									(form.points > 0 || showPointsInput) ? (
+										<div className="relative">
+											<input
+												type="number"
+												className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm pr-8"
+												placeholder="ポイント数"
+												min={1}
+												autoFocus={showPointsInput && form.points === 0}
+												value={form.points || ""}
+												onChange={(e) => setForm({ ...form, points: Number(e.target.value) })}
+											/>
+											<button
+												type="button"
+												onClick={() => { setForm({ ...form, points: 0 }); setShowPointsInput(false); }}
+												className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+											>
+												✕
+											</button>
+										</div>
+									) : (
+										<button
+											type="button"
+											onClick={() => setShowPointsInput(true)}
+											className="text-sm text-indigo-500"
+										>
+											+ ポイントを設定
+										</button>
+									)
+								)}
+								{(form.type === "urgent" || form.type === "someday") && (
+									form.deadline ? (
+										<div className="relative">
+											<input
+												type="date"
+												className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 pr-8"
+												value={form.deadline}
+												onChange={(e) => setForm({ ...form, deadline: e.target.value })}
+											/>
+											<button
+												type="button"
+												onClick={() => setForm({ ...form, deadline: "" })}
+												className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+											>
+												✕
+											</button>
+										</div>
+									) : (
+										<label className="block">
+											<span className="text-sm text-indigo-500 cursor-pointer">+ 期日を設定</span>
+											<input
+												type="date"
+												className="sr-only"
+												onChange={(e) => { if (e.target.value) setForm({ ...form, deadline: e.target.value }); }}
+											/>
+										</label>
+									)
+								)}
+								<div className="flex gap-2">
+									<Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>キャンセル</Button>
+									<Button className="flex-1" onClick={handleAddTask}>追加</Button>
+								</div>
+							</div>
+						</div>
+					)}
+
+					{/* 編集モーダル */}
+					{editTask && (
+						<div className="fixed inset-0 bg-black/40 flex items-end z-50" onClick={() => setEditTask(null)}>
+							<div className="bg-white w-full max-w-md mx-auto rounded-t-xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+								<h2 className="font-semibold text-gray-900">タスクを編集</h2>
+								<input
+									className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+									placeholder="タスク名"
+									value={editTask.title}
+									onChange={(e) => setEditTask({ ...editTask, title: e.target.value })}
+									autoFocus
+								/>
+								{(editTask.type === "urgent" || editTask.type === "someday") && (
+									(editTask.points > 0 || showEditPointsInput) ? (
+										<div className="relative">
+											<input
+												type="number"
+												className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm pr-8"
+												placeholder="ポイント数"
+												min={1}
+												autoFocus={showEditPointsInput && editTask.points === 0}
+												value={editTask.points || ""}
+												onChange={(e) => setEditTask({ ...editTask, points: Number(e.target.value) })}
+											/>
+											<button
+												type="button"
+												onClick={() => { setEditTask({ ...editTask, points: 0 }); setShowEditPointsInput(false); }}
+												className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+											>
+												✕
+											</button>
+										</div>
+									) : (
+										<button type="button" onClick={() => setShowEditPointsInput(true)} className="text-sm text-indigo-500">
+											+ ポイントを設定
+										</button>
+									)
+								)}
+								{(editTask.type === "urgent" || editTask.type === "someday") && (
+									editTask.deadline ? (
+										<div className="relative">
+											<input
+												type="date"
+												className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 pr-8"
+												value={editTask.deadline}
+												onChange={(e) => setEditTask({ ...editTask, deadline: e.target.value })}
+											/>
+											<button
+												type="button"
+												onClick={() => setEditTask({ ...editTask, deadline: "" })}
+												className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+											>
+												✕
+											</button>
+										</div>
+									) : (
+										<label className="block">
+											<span className="text-sm text-indigo-500 cursor-pointer">+ 期日を設定</span>
+											<input
+												type="date"
+												className="sr-only"
+												onChange={(e) => { if (e.target.value) setEditTask({ ...editTask, deadline: e.target.value }); }}
+											/>
+										</label>
+									)
+								)}
+								<div className="flex gap-2">
+									<Button variant="outline" className="flex-1" onClick={() => setEditTask(null)}>キャンセル</Button>
+									<Button className="flex-1" onClick={handleSaveEdit}>保存</Button>
+								</div>
+								<div className="border-t border-gray-100 pt-3">
+									{confirmDelete ? (
+										<div className="flex items-center gap-3">
+											<span className="text-sm text-gray-500 flex-1">本当に削除しますか？</span>
+											<button type="button" onClick={() => setConfirmDelete(false)} className="text-sm text-gray-400">
+												キャンセル
+											</button>
+											<button type="button" onClick={handleDeleteTask} className="text-sm text-red-500 font-medium">
+												削除する
+											</button>
+										</div>
+									) : (
+										<button
+											type="button"
+											onClick={() => setConfirmDelete(true)}
+											className="text-sm text-red-400 w-full text-left"
+										>
+											このタスクを削除
+										</button>
+									)}
+								</div>
+							</div>
+						</div>
+					)}
+
+					{/* タスク一覧 */}
+					{tab === "today" && (
+						<>
+							<TaskSection
+								title={`毎日ルーティン${dailyRoutineTasks.length > 0 ? ` (${dailyRoutineTasks[0].points}pt/個)` : ""}`}
+								tasks={dailyRoutineTasks}
+								isCompleted={isCompleted}
+								onToggle={handleToggle}
+								onEdit={openEdit}
+							/>
+							<TaskSection
+								title="緊急"
+								tasks={urgentTasks}
+								isCompleted={isCompleted}
+								onToggle={handleToggle}
+								onEdit={openEdit}
+								showPoints
+							/>
+						</>
+					)}
+					{tab === "weekly" && (
+						<TaskSection
+							title={`毎週ルーティン${weeklyTasks.length > 0 ? ` (${weeklyTasks[0].points}pt/個)` : ""}`}
+							tasks={weeklyTasks}
+							isCompleted={isCompleted}
+							onToggle={handleToggle}
+							onEdit={openEdit}
+						/>
+					)}
+					{tab === "someday" && (
+						<TaskSection
+							title="いつかやる"
+							tasks={somedayTasks}
+							isCompleted={isCompleted}
+							onToggle={handleToggle}
+							onEdit={openEdit}
+							showPoints
+						/>
+					)}
+
+					{visibleTasks.length === 0 && (
+						<p className="text-center text-gray-400 text-sm mt-8">タスクがありません</p>
+					)}
+				</div>
+			</div>
+
+			<BottomNav />
+		</div>
+	);
+}
+
+type TaskSectionProps = {
+	title: string;
+	tasks: Task[];
+	isCompleted: (task: Task) => boolean;
+	onToggle: (task: Task) => void;
+	onEdit: (task: Task) => void;
+	showPoints?: boolean;
+};
+
+function TaskSection({ title, tasks, isCompleted, onToggle, onEdit, showPoints }: TaskSectionProps) {
+	if (tasks.length === 0) return null;
+	return (
+		<div className="mb-6">
+			<h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{title}</h2>
+			<div className="space-y-2">
+				{tasks.map((task) => {
+					const done = isCompleted(task);
+					return (
+						<div
+							key={task.id}
+							className={`flex items-center bg-white rounded-lg border ${done ? "border-gray-100" : "border-gray-200"}`}
+						>
+							<button
+								type="button"
+								onClick={() => onToggle(task)}
+								className="flex items-center gap-3 flex-1 px-4 py-3 text-left active:opacity-70"
+							>
+								<span className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+									done ? "bg-indigo-500 border-indigo-500" : "border-gray-300"
+								}`}>
+									{done && (
+										<svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+										</svg>
+									)}
+								</span>
+								<span className={`flex-1 text-sm ${done ? "line-through text-gray-400" : "text-gray-800"}`}>
+									{task.title}
+								</span>
+								{showPoints && (
+									<span className="text-xs text-gray-400">{task.points}pt</span>
+								)}
+							</button>
+							<button
+								type="button"
+								onClick={() => onEdit(task)}
+								className="px-3 py-3 text-gray-300 hover:text-gray-500 text-lg leading-none"
+							>
+								…
+							</button>
+						</div>
+					);
+				})}
 			</div>
 		</div>
 	);
