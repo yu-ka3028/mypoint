@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { PointCard } from "@/components/point-card/PointCard";
 import { BottomNav } from "@/components/BottomNav";
 import { useEffect, useState } from "react";
+import { resetStamps } from "@/lib/stampBadge";
 import type { UserProfile } from "@/types";
 import type { Reward } from "@/core/pointCard";
 
@@ -11,6 +12,10 @@ export default function CardPage() {
 	const supabase = createClient();
 	const [profile, setProfile] = useState<UserProfile | null>(null);
 	const [rewards, setRewards] = useState<Reward[]>([]);
+
+	useEffect(() => {
+		resetStamps();
+	}, []);
 
 	useEffect(() => {
 		const load = async () => {
