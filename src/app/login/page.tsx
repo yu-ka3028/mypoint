@@ -1,30 +1,21 @@
-"use client";
-
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
+import { PointCardDemo } from "@/components/landing/PointCardDemo";
+import { GoogleLoginButton } from "@/components/landing/GoogleLoginButton";
+import { Ranking } from "@/components/landing/Ranking";
 
 export default function LoginPage() {
-	const supabase = createClient();
-
-	const handleGoogleLogin = async () => {
-		await supabase.auth.signInWithOAuth({
-			provider: "google",
-			options: {
-				redirectTo: `${window.location.origin}/auth/callback`,
-			},
-		});
-	};
-
 	return (
-		<div className="min-h-screen flex items-center justify-center bg-gray-50">
-			<div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 w-full max-w-sm text-center space-y-6">
-				<div className="space-y-2">
-					<h1 className="text-2xl font-bold text-gray-900">mypoint</h1>
-					<p className="text-sm text-gray-500">日常をポイント化するタスク管理</p>
+		<div className="min-h-screen bg-gray-50 py-12 px-4">
+			<div className="max-w-md mx-auto space-y-8">
+				<div className="text-center space-y-2">
+					<h1 className="text-3xl font-bold text-gray-900">mypoint</h1>
+					<p className="text-gray-600">日常タスクをこなすだけで、ポイントが貯まる</p>
 				</div>
-				<Button onClick={handleGoogleLogin} className="w-full" size="lg">
-					Google でログイン
-				</Button>
+
+				<PointCardDemo />
+
+				<GoogleLoginButton />
+
+				<Ranking />
 			</div>
 		</div>
 	);
