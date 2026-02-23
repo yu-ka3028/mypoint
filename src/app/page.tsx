@@ -2,8 +2,14 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { PointCard } from "@/components/point-card/PointCard";
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+
+const SAMPLE_REWARDS = [
+	{ id: "1", label: "ケーキ", points: 200 },
+	{ id: "2", label: "映画", points: 500 },
+];
 
 export default function Home() {
 	const supabase = createClient();
@@ -29,10 +35,8 @@ export default function Home() {
 						ログアウト
 					</Button>
 				</div>
-				<div className="bg-white rounded-2xl border border-gray-100 p-6 mt-4">
-					<p className="text-sm text-gray-500">ログイン中:</p>
-					<p className="font-medium text-gray-900 mt-1">{user?.email}</p>
-				</div>
+				<p className="text-sm text-gray-500 mb-4">{user?.email}</p>
+				<PointCard currentPoints={250} rewards={SAMPLE_REWARDS} />
 			</div>
 		</div>
 	);
