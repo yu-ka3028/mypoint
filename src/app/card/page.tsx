@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { PointCardAnimated } from "@/components/point-card/PointCardAnimated";
 import { BottomNav } from "@/components/BottomNav";
 import { Button } from "@/components/ui/button";
+import { Header } from "@/components/Header";
 import { useEffect, useRef, useState } from "react";
 import { getStampCount, resetStamps, getPrevCardPoints, setPrevCardPoints } from "@/lib/stampBadge";
 import { PTS_PER_SQUARE } from "@/core/pointCard";
@@ -127,9 +128,7 @@ export default function CardPage() {
 	return (
 		<div className="min-h-screen bg-gray-50 pb-20">
 			<div className="max-w-md mx-auto">
-				<div className="px-4 py-4 bg-white border-b border-gray-200">
-					<h1 className="text-xl font-bold text-gray-900">ポイントカード</h1>
-				</div>
+				<Header />
 				<div className="px-4 pt-6">
 					{profile && (
 						<>
