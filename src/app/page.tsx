@@ -1,8 +1,11 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { BottomNav } from "@/components/BottomNav";
+import { Header } from "@/components/Header";
 import { useRoutineInit } from "@/hooks/useRoutineInit";
 import { calcRoutinePoints, getJSTDate, getJSTWeek } from "@/core/tasks";
 import { addStamp, removeStamp } from "@/lib/stampBadge";
@@ -216,11 +219,6 @@ export default function Home() {
 		await fetchAll();
 	};
 
-	const handleLogout = async () => {
-		await supabase.auth.signOut();
-		window.location.href = "/login";
-	};
-
 	const todayTasks = tasks.filter((t) => t.type === "daily_routine" || t.type === "urgent");
 	const weeklyTasks = tasks.filter((t) => t.type === "weekly_routine");
 	const somedayTasks = tasks.filter((t) => t.type === "someday");
@@ -237,13 +235,7 @@ export default function Home() {
 	return (
 		<div className="min-h-screen bg-gray-50 pb-20">
 			<div className="max-w-md mx-auto">
-				{/* Header */}
-				<div className="flex items-center justify-between px-4 py-4 bg-white border-b border-gray-200">
-					<h1 className="text-xl font-bold text-gray-900">mypoint</h1>
-					<Button variant="outline" size="sm" onClick={handleLogout}>
-						ログアウト
-					</Button>
-				</div>
+				<Header />
 
 				{/* Tabs */}
 				<div className="flex bg-white border-b border-gray-200">
