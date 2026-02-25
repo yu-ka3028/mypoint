@@ -14,6 +14,11 @@ export function getJSTDate(): string {
 		.replace(/\//g, "-");
 }
 
+export function formatSlotDate(dateStr: string): string {
+	const [, m, d] = dateStr.split("-");
+	return `${Number(m)}/${Number(d)}`;
+}
+
 export function getJSTWeek(): string {
 	const now = new Date(
 		new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }),

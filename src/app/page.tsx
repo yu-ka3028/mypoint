@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { BottomNav } from "@/components/BottomNav";
 import { Header } from "@/components/Header";
 import { useRoutineInit } from "@/hooks/useRoutineInit";
-import { calcRoutinePoints, getJSTDate, getJSTWeek } from "@/core/tasks";
+import { calcRoutinePoints, formatSlotDate, getJSTDate, getJSTWeek } from "@/core/tasks";
 import { addStamp, removeStamp } from "@/lib/stampBadge";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -714,7 +714,3 @@ function WeeklyTaskSection({ title, tasks, completions, onSlotComplete, onSlotUn
 	);
 }
 
-function formatSlotDate(dateStr: string): string {
-	const [, m, d] = dateStr.split("-");
-	return `${Number(m)}/${Number(d)}`;
-}
