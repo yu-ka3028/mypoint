@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcRoutinePoints, getJSTDate, getJSTWeek } from "./tasks";
+import { calcRoutinePoints, formatSlotDate, getJSTDate, getJSTWeek } from "./tasks";
 
 describe("calcRoutinePoints", () => {
 	it("1タスクのとき 100pt になる", () => {
@@ -28,6 +28,32 @@ describe("calcRoutinePoints", () => {
 
 	it("負数のとき 0pt になる", () => {
 		expect(calcRoutinePoints(-1)).toBe(0);
+	});
+
+	it("週スロット合計4（3+1）のとき 25pt になる", () => {
+		expect(calcRoutinePoints(4)).toBe(25);
+	});
+
+	it("週スロット合計6（3+2+1）のとき 16pt になる（floor）", () => {
+		expect(calcRoutinePoints(6)).toBe(16);
+	});
+});
+
+describe("formatSlotDate", () => {
+	it("YYYY-MM-DD を M/D に変換する", () => {
+		expect(formatSlotDate("2026-02-25")).toBe("2/25");
+	});
+
+	it("月・日が1桁のとき先頭ゼロを除去する", () => {
+		expect(formatSlotDate("2026-01-01")).toBe("1/1");
+	});
+
+	it("月が2桁・日が1桁のとき正しく変換する", () => {
+		expect(formatSlotDate("2026-10-05")).toBe("10/5");
+	});
+
+	it("月・日ともに2桁のとき正しく変換する", () => {
+		expect(formatSlotDate("2026-12-31")).toBe("12/31");
 	});
 });
 
