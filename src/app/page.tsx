@@ -11,7 +11,7 @@ import { calcRoutinePoints, getJSTDate, getJSTWeek } from "@/core/tasks";
 import { addStamp, removeStamp } from "@/lib/stampBadge";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { Task, DailyRoutineStatus, WeeklyRoutineStatus } from "@/types";
+import type { Task, DailyRoutineStatus, WeeklyRoutineCompletion } from "@/types";
 
 type Tab = "today" | "weekly" | "someday";
 
@@ -20,6 +20,7 @@ type AddTaskForm = {
 	type: Task["type"];
 	points: number;
 	deadline: string;
+	weekly_count: number;
 };
 
 type EditTaskForm = {
@@ -28,6 +29,7 @@ type EditTaskForm = {
 	title: string;
 	points: number;
 	deadline: string;
+	weekly_count: number;
 };
 
 const TAB_DEFAULT_TYPE: Record<Tab, Task["type"]> = {
@@ -44,15 +46,14 @@ export default function Home() {
 	const [tab, setTab] = useState<Tab>("today");
 	const [tasks, setTasks] = useState<Task[]>([]);
 	const [dailyStatus, setDailyStatus] = useState<DailyRoutineStatus[]>([]);
-	const [weeklyStatus, setWeeklyStatus] = useState<WeeklyRoutineStatus[]>([]);
+	const [weeklyCompletions, setWeeklyCompletions] = useState<WeeklyRoutineCompletion[]>([]);
 	const [todayCompletions, setTodayCompletions] = useState<{ task_id: string }[]>([]);
 	const [showForm, setShowForm] = useState(false);
-	const [form, setForm] = useState<AddTaskForm>({ title: "", type: "daily_routine", points: 0, deadline: "" });
+	const [form, setForm] = useState<AddTaskForm>({ title: "", type: "daily_routine", points: 0, deadline: "", weekly_count: 1 });
 	const [showPointsInput, setShowPointsInput] = useState(false);
 	const [editTask, setEditTask] = useState<EditTaskForm | null>(null);
 	const [showEditPointsInput, setShowEditPointsInput] = useState(false);
 	const [confirmDelete, setConfirmDelete] = useState(false);
-	// 楽観的更新用: task_id → 表示上の完了状態
 	const [optimisticCompleted, setOptimisticCompleted] = useState<Record<string, boolean>>({});
 	const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -76,20 +77,19 @@ export default function Home() {
 		const [tasksRes, dailyRes, weeklyRes, completionsRes] = await Promise.all([
 			supabase.from("tasks").select("*").eq("user_id", userId).eq("is_active", true).order("created_at"),
 			supabase.from("daily_routine_status").select("*").eq("user_id", userId).eq("target_date", today),
-			supabase.from("weekly_routine_status").select("*").eq("user_id", userId).eq("target_week", week),
+			supabase.from("weekly_routine_completions").select("*").eq("user_id", userId).eq("target_week", week),
 			supabase.from("task_completions").select("task_id").eq("user_id", userId).eq("completion_date", today),
 		]);
 		if (tasksRes.data) setTasks(tasksRes.data as Task[]);
 		if (dailyRes.data) setDailyStatus(dailyRes.data as DailyRoutineStatus[]);
-		if (weeklyRes.data) setWeeklyStatus(weeklyRes.data as WeeklyRoutineStatus[]);
+		if (weeklyRes.data) setWeeklyCompletions(weeklyRes.data as WeeklyRoutineCompletion[]);
 		if (completionsRes.data) setTodayCompletions(completionsRes.data);
 	};
 
 	const isCompleted = (task: Task): boolean => {
-		// 楽観的更新が優先
 		if (task.id in optimisticCompleted) return optimisticCompleted[task.id];
 		if (task.type === "daily_routine") return dailyStatus.some((s) => s.task_id === task.id && s.completed);
-		if (task.type === "weekly_routine") return weeklyStatus.some((s) => s.task_id === task.id && s.completed);
+		if (task.type === "weekly_routine") return weeklyCompletions.filter((c) => c.task_id === task.id).length >= task.weekly_count;
 		return todayCompletions.some((c) => c.task_id === task.id);
 	};
 
@@ -102,11 +102,6 @@ export default function Home() {
 				await supabase.from("daily_routine_status").upsert(
 					{ user_id: userId, task_id: task.id, target_date: today, completed: true, completed_at: new Date().toISOString() },
 					{ onConflict: "user_id,task_id,target_date" },
-				);
-			} else if (task.type === "weekly_routine") {
-				await supabase.from("weekly_routine_status").upsert(
-					{ user_id: userId, task_id: task.id, target_week: week, completed: true, completed_at: new Date().toISOString() },
-					{ onConflict: "user_id,task_id,target_week" },
 				);
 			}
 			await supabase.from("task_completions").upsert(
@@ -121,10 +116,6 @@ export default function Home() {
 				await supabase.from("daily_routine_status")
 					.update({ completed: false, completed_at: null })
 					.eq("user_id", userId).eq("task_id", task.id).eq("target_date", today);
-			} else if (task.type === "weekly_routine") {
-				await supabase.from("weekly_routine_status")
-					.update({ completed: false, completed_at: null })
-					.eq("user_id", userId).eq("task_id", task.id).eq("target_week", week);
 			}
 			await supabase.from("task_completions")
 				.delete()
@@ -143,30 +134,66 @@ export default function Home() {
 
 	const handleToggle = (task: Task) => {
 		const newState = !isCompleted(task);
-
-		// 即時UI反映
 		setOptimisticCompleted((prev) => ({ ...prev, [task.id]: newState }));
-
-		// デバウンス: 500ms以内の再トグルはタイマーリセット
 		clearTimeout(debounceTimers.current[task.id]);
 		debounceTimers.current[task.id] = setTimeout(() => {
 			persistToggle(task, newState);
 		}, DEBOUNCE_MS);
 	};
 
+	const handleSlotComplete = async (task: Task) => {
+		const today = getJSTDate();
+		const week = getJSTWeek();
+		await supabase.from("weekly_routine_completions").insert({
+			user_id: userId,
+			task_id: task.id,
+			target_week: week,
+			completed_date: today,
+		});
+		await supabase.rpc("increment_points", { p_user_id: userId, p_points: task.points, p_type: task.type });
+		toast(`+${task.points}pt ポイントゲット！`);
+		addStamp();
+		await fetchAll();
+	};
+
+	const handleSlotUncomplete = async (task: Task, completionId: string) => {
+		await supabase.from("weekly_routine_completions").delete().eq("id", completionId);
+		await supabase.rpc("increment_points", { p_user_id: userId, p_points: -task.points, p_type: task.type });
+		removeStamp();
+		await fetchAll();
+	};
+
 	const openEdit = (task: Task) => {
-		setEditTask({ id: task.id, type: task.type, title: task.title, points: task.points, deadline: task.deadline ?? "" });
+		setEditTask({ id: task.id, type: task.type, title: task.title, points: task.points, deadline: task.deadline ?? "", weekly_count: task.weekly_count });
 		setShowEditPointsInput(task.points > 0);
 		setConfirmDelete(false);
 	};
 
 	const handleSaveEdit = async () => {
 		if (!editTask || !editTask.title.trim()) return;
-		const isRoutine = editTask.type === "daily_routine" || editTask.type === "weekly_routine";
-		await supabase.from("tasks").update({
-			title: editTask.title.trim(),
-			...(isRoutine ? {} : { points: editTask.points, deadline: editTask.deadline || null }),
-		}).eq("id", editTask.id);
+
+		if (editTask.type === "weekly_routine") {
+			await supabase.from("tasks").update({
+				title: editTask.title.trim(),
+				weekly_count: editTask.weekly_count,
+			}).eq("id", editTask.id);
+
+			const currentTask = tasks.find((t) => t.id === editTask.id);
+			if (currentTask && currentTask.weekly_count !== editTask.weekly_count) {
+				const allWeeklyTasks = tasks.filter((t) => t.type === "weekly_routine");
+				const totalSlots = allWeeklyTasks.reduce((sum, t) =>
+					sum + (t.id === editTask.id ? editTask.weekly_count : t.weekly_count), 0);
+				const newPoints = calcRoutinePoints(totalSlots);
+				await supabase.from("tasks").update({ points: newPoints }).in("id", allWeeklyTasks.map((t) => t.id));
+			}
+		} else {
+			const isRoutine = editTask.type === "daily_routine";
+			await supabase.from("tasks").update({
+				title: editTask.title.trim(),
+				...(isRoutine ? {} : { points: editTask.points, deadline: editTask.deadline || null }),
+			}).eq("id", editTask.id);
+		}
+
 		await fetchAll();
 		setEditTask(null);
 	};
@@ -180,9 +207,14 @@ export default function Home() {
 		if (isRoutine) {
 			const remaining = tasks.filter((t) => t.type === task.type && t.id !== task.id);
 			if (remaining.length > 0) {
-				await supabase.from("tasks")
-					.update({ points: calcRoutinePoints(remaining.length) })
-					.in("id", remaining.map((t) => t.id));
+				let newPoints: number;
+				if (task.type === "weekly_routine") {
+					const totalSlots = remaining.reduce((sum, t) => sum + t.weekly_count, 0);
+					newPoints = calcRoutinePoints(totalSlots);
+				} else {
+					newPoints = calcRoutinePoints(remaining.length);
+				}
+				await supabase.from("tasks").update({ points: newPoints }).in("id", remaining.map((t) => t.id));
 			}
 		}
 		await fetchAll();
@@ -193,16 +225,25 @@ export default function Home() {
 		if (!form.title.trim()) return;
 
 		const type = form.type;
-		const isRoutine = type === "daily_routine" || type === "weekly_routine";
-		const sameTypeTasks = tasks.filter((t) => t.type === type);
-		const newCount = sameTypeTasks.length + 1;
-		const points = isRoutine ? calcRoutinePoints(newCount) : form.points;
+		let points: number;
 
-		if (isRoutine && sameTypeTasks.length > 0) {
-			await supabase
-				.from("tasks")
-				.update({ points: calcRoutinePoints(newCount) })
-				.in("id", sameTypeTasks.map((t) => t.id));
+		if (type === "daily_routine") {
+			const sameTypeTasks = tasks.filter((t) => t.type === "daily_routine");
+			const newCount = sameTypeTasks.length + 1;
+			points = calcRoutinePoints(newCount);
+			if (sameTypeTasks.length > 0) {
+				await supabase.from("tasks").update({ points }).in("id", sameTypeTasks.map((t) => t.id));
+			}
+		} else if (type === "weekly_routine") {
+			const weeklyCount = form.weekly_count;
+			const sameTypeTasks = tasks.filter((t) => t.type === "weekly_routine");
+			const totalSlots = sameTypeTasks.reduce((sum, t) => sum + t.weekly_count, 0) + weeklyCount;
+			points = calcRoutinePoints(totalSlots);
+			if (sameTypeTasks.length > 0) {
+				await supabase.from("tasks").update({ points }).in("id", sameTypeTasks.map((t) => t.id));
+			}
+		} else {
+			points = form.points;
 		}
 
 		await supabase.from("tasks").insert({
@@ -210,11 +251,12 @@ export default function Home() {
 			title: form.title.trim(),
 			type,
 			points,
-			deadline: form.deadline || null,
+			...(type === "weekly_routine" ? { weekly_count: form.weekly_count } : {}),
+			deadline: (type === "urgent" || type === "someday") ? (form.deadline || null) : null,
 			is_active: true,
 		});
 
-		setForm({ title: "", type: TAB_DEFAULT_TYPE[tab], points: 0, deadline: "" });
+		setForm({ title: "", type: TAB_DEFAULT_TYPE[tab], points: 0, deadline: "", weekly_count: 1 });
 		setShowForm(false);
 		await fetchAll();
 	};
@@ -227,7 +269,7 @@ export default function Home() {
 	const urgentTasks = todayTasks.filter((t) => t.type === "urgent");
 
 	const openForm = () => {
-		setForm({ title: "", type: TAB_DEFAULT_TYPE[tab], points: 0, deadline: "" });
+		setForm({ title: "", type: TAB_DEFAULT_TYPE[tab], points: 0, deadline: "", weekly_count: 1 });
 		setShowPointsInput(false);
 		setShowForm(true);
 	};
@@ -278,6 +320,20 @@ export default function Home() {
 										<option value="daily_routine">毎日ルーティン</option>
 										<option value="urgent">緊急</option>
 									</select>
+								)}
+								{tab === "weekly" && (
+									<div className="flex items-center gap-3">
+										<span className="text-sm text-gray-600">週の回数</span>
+										<select
+											className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+											value={form.weekly_count}
+											onChange={(e) => setForm({ ...form, weekly_count: Number(e.target.value) })}
+										>
+											{[1, 2, 3, 4, 5, 6].map((n) => (
+												<option key={n} value={n}>{n}回/週</option>
+											))}
+										</select>
+									</div>
 								)}
 								{(form.type === "urgent" || form.type === "someday") && (
 									(form.points > 0 || showPointsInput) ? (
@@ -357,6 +413,20 @@ export default function Home() {
 									onChange={(e) => setEditTask({ ...editTask, title: e.target.value })}
 									autoFocus
 								/>
+								{editTask.type === "weekly_routine" && (
+									<div className="flex items-center gap-3">
+										<span className="text-sm text-gray-600">週の回数</span>
+										<select
+											className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+											value={editTask.weekly_count}
+											onChange={(e) => setEditTask({ ...editTask, weekly_count: Number(e.target.value) })}
+										>
+											{[1, 2, 3, 4, 5, 6].map((n) => (
+												<option key={n} value={n}>{n}回/週</option>
+											))}
+										</select>
+									</div>
+								)}
 								{(editTask.type === "urgent" || editTask.type === "someday") && (
 									(editTask.points > 0 || showEditPointsInput) ? (
 										<div className="relative">
@@ -461,11 +531,12 @@ export default function Home() {
 						</>
 					)}
 					{tab === "weekly" && (
-						<TaskSection
-							title={`毎週ルーティン${weeklyTasks.length > 0 ? ` (${weeklyTasks[0].points}pt/個)` : ""}`}
+						<WeeklyTaskSection
+							title={`毎週ルーティン${weeklyTasks.length > 0 ? ` (${weeklyTasks[0].points}pt/スロット)` : ""}`}
 							tasks={weeklyTasks}
-							isCompleted={isCompleted}
-							onToggle={handleToggle}
+							completions={weeklyCompletions}
+							onSlotComplete={handleSlotComplete}
+							onSlotUncomplete={handleSlotUncomplete}
 							onEdit={openEdit}
 						/>
 					)}
@@ -547,4 +618,103 @@ function TaskSection({ title, tasks, isCompleted, onToggle, onEdit, showPoints }
 			</div>
 		</div>
 	);
+}
+
+type WeeklyTaskSectionProps = {
+	title: string;
+	tasks: Task[];
+	completions: WeeklyRoutineCompletion[];
+	onSlotComplete: (task: Task) => void;
+	onSlotUncomplete: (task: Task, completionId: string) => void;
+	onEdit: (task: Task) => void;
+};
+
+function WeeklyTaskSection({ title, tasks, completions, onSlotComplete, onSlotUncomplete, onEdit }: WeeklyTaskSectionProps) {
+	if (tasks.length === 0) return null;
+	const today = getJSTDate();
+	return (
+		<div className="mb-6">
+			<h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{title}</h2>
+			<div className="space-y-2">
+				{tasks.map((task) => {
+					const taskCompletions = completions
+						.filter((c) => c.task_id === task.id)
+						.sort((a, b) => a.completed_date.localeCompare(b.completed_date));
+					const isFull = taskCompletions.length >= task.weekly_count;
+
+					if (task.weekly_count === 1) {
+						const done = taskCompletions.length >= 1;
+						return (
+							<div key={task.id} className={`flex items-center bg-white rounded-lg border ${done ? "border-gray-100" : "border-gray-200"}`}>
+								<button
+									type="button"
+									onClick={() => done
+										? onSlotUncomplete(task, taskCompletions[0].id)
+										: onSlotComplete(task)
+									}
+									className="flex items-center gap-3 flex-1 px-4 py-3 text-left active:opacity-70"
+								>
+									<span className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+										done ? "bg-indigo-500 border-indigo-500" : "border-gray-300"
+									}`}>
+										{done && (
+											<svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+											</svg>
+										)}
+									</span>
+									<span className={`flex-1 text-sm ${done ? "line-through text-gray-400" : "text-gray-800"}`}>
+										{task.title}
+									</span>
+								</button>
+								<button type="button" onClick={() => onEdit(task)} className="px-3 py-3 text-gray-300 hover:text-gray-500 text-lg leading-none">…</button>
+							</div>
+						);
+					}
+
+					return (
+						<div key={task.id} className={`bg-white rounded-lg border ${isFull ? "border-gray-100" : "border-gray-200"}`}>
+							<div className="flex items-center px-4 py-2">
+								<span className={`flex-1 text-sm ${isFull ? "line-through text-gray-400" : "text-gray-800"}`}>{task.title}</span>
+								<span className="text-xs text-gray-400 mr-3">{taskCompletions.length}/{task.weekly_count}</span>
+								<button type="button" onClick={() => onEdit(task)} className="text-gray-300 hover:text-gray-500 text-lg leading-none">…</button>
+							</div>
+							<div className="flex px-4 pb-3 gap-2">
+								{Array.from({ length: task.weekly_count }).map((_, i) => {
+									const completion = taskCompletions[i];
+									const isToday = completion?.completed_date === today;
+									const canTap = !completion || isToday;
+									return (
+										<button
+											key={i}
+											type="button"
+											disabled={!canTap}
+											onClick={() => {
+												if (!completion) onSlotComplete(task);
+												else if (isToday) onSlotUncomplete(task, completion.id);
+											}}
+											className={`flex-1 rounded border text-xs py-2 ${
+												completion
+													? isToday
+														? "bg-indigo-100 border-indigo-300 text-indigo-700"
+														: "bg-gray-100 border-gray-200 text-gray-500"
+													: "border-gray-200 text-gray-300"
+											}`}
+										>
+											{completion ? formatSlotDate(completion.completed_date) : ""}
+										</button>
+									);
+								})}
+							</div>
+						</div>
+					);
+				})}
+			</div>
+		</div>
+	);
+}
+
+function formatSlotDate(dateStr: string): string {
+	const [, m, d] = dateStr.split("-");
+	return `${Number(m)}/${Number(d)}`;
 }

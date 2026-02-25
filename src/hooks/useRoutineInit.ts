@@ -49,26 +49,7 @@ export function useRoutineInit(userId: string) {
 				);
 			}
 
-			const { data: weeklyTasks } = await supabase
-				.from("tasks")
-				.select("id")
-				.eq("user_id", userId)
-				.eq("type", "weekly_routine")
-				.eq("is_active", true);
-
-			if (weekChanged && weeklyTasks && weeklyTasks.length > 0) {
-				await supabase.from("weekly_routine_status").upsert(
-					weeklyTasks.map((t) => ({
-						user_id: userId,
-						task_id: t.id,
-						target_week: week,
-						completed: false,
-					})),
-					{ onConflict: "user_id,task_id,target_week", ignoreDuplicates: true },
-				);
-			}
-
-			if (dateChanged) localStorage.setItem(STORAGE_KEY, today);
+				if (dateChanged) localStorage.setItem(STORAGE_KEY, today);
 			if (weekChanged) localStorage.setItem(STORAGE_WEEK_KEY, week);
 		};
 

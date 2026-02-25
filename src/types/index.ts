@@ -6,6 +6,7 @@ export type Task = {
 	title: string;
 	type: TaskType;
 	points: number;
+	weekly_count: number;
 	deadline: string | null;
 	is_active: boolean;
 	created_at: string;
@@ -18,11 +19,11 @@ export type DailyRoutineStatus = {
 	completed: boolean;
 };
 
-export type WeeklyRoutineStatus = {
+export type WeeklyRoutineCompletion = {
 	id: string;
 	task_id: string;
 	target_week: string;
-	completed: boolean;
+	completed_date: string;
 };
 
 export type UserProfile = {
