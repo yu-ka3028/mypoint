@@ -1,40 +1,34 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 export function AuthRefresher() {
-	const supabase = createClient();
 	const router = useRouter();
 
 	useEffect(() => {
-		const refresh = async () => {
-			const {
-				data: { session },
-			} = await supabase.auth.getSession();
-			if (!session) {
-				router.push("/login");
-			}
-		};
-
 		// iOS Safari: bfcacheからの復帰はvisibilitychangeが発火しないためpageshowを使う
 		const handlePageShow = (e: PageTransitionEvent) => {
-			if (e.persisted) refresh();
+			if (e.persisted) router.refresh();
 		};
 
 		// Android Chromeなどその他のブラウザ向け
 		const handleVisibilityChange = () => {
-			if (document.visibilityState === "visible") refresh();
+			if (document.visibilityState === "visible") router.refresh();
 		};
+
+		// 保険としてfocusも監視
+		const handleFocus = () => router.refresh();
 
 		window.addEventListener("pageshow", handlePageShow);
 		document.addEventListener("visibilitychange", handleVisibilityChange);
+		window.addEventListener("focus", handleFocus);
 		return () => {
 			window.removeEventListener("pageshow", handlePageShow);
 			document.removeEventListener("visibilitychange", handleVisibilityChange);
+			window.removeEventListener("focus", handleFocus);
 		};
-	}, [supabase, router]);
+	}, [router]);
 
 	return null;
 }
