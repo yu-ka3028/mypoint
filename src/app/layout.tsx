@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
-import { AuthRefresher } from "@/components/AuthRefresher";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,7 +30,6 @@ export default function RootLayout({
       >
         {children}
         <Toaster position="top-center" />
-        <AuthRefresher />
       </body>
     </html>
   );
