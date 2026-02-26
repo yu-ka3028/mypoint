@@ -25,9 +25,13 @@ export async function proxy(request: NextRequest) {
 		},
 	);
 
-	const {
-		data: { session },
-	} = await supabase.auth.getSession();
+	let session = null;
+	try {
+		const { data } = await supabase.auth.getSession();
+		session = data.session;
+	} catch {
+		// refresh_token_not_found など無効なトークンはセッションなしとして扱う
+	}
 
 	if (
 		!session &&
