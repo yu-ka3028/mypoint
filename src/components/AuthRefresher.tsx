@@ -9,20 +9,31 @@ export function AuthRefresher() {
 	const router = useRouter();
 
 	useEffect(() => {
-		const handleVisibilityChange = async () => {
-			if (document.visibilityState === "visible") {
-				const {
-					data: { session },
-				} = await supabase.auth.getSession();
-				if (!session) {
-					router.push("/login");
-				}
+		const refresh = async () => {
+			const {
+				data: { session },
+			} = await supabase.auth.getSession();
+			if (!session) {
+				router.push("/login");
 			}
 		};
 
+		// iOS Safari: bfcacheからの復帰はvisibilitychangeが発火しないためpageshowを使う
+		const handlePageShow = (e: PageTransitionEvent) => {
+			if (e.persisted) refresh();
+		};
+
+		// Android Chromeなどその他のブラウザ向け
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === "visible") refresh();
+		};
+
+		window.addEventListener("pageshow", handlePageShow);
 		document.addEventListener("visibilitychange", handleVisibilityChange);
-		return () =>
+		return () => {
+			window.removeEventListener("pageshow", handlePageShow);
 			document.removeEventListener("visibilitychange", handleVisibilityChange);
+		};
 	}, [supabase, router]);
 
 	return null;
