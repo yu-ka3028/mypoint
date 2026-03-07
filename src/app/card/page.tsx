@@ -164,26 +164,39 @@ export default function CardPage() {
 						</Button>
 						{rewards.length > 0 && (
 							<div className="space-y-2">
-								{rewards.map((reward) => (
+								{rewards.map((reward) => {
+									const pts = profile?.points_total ?? 0;
+									const progress = Math.min((pts / reward.points) * 100, 100);
+									const achieved = pts >= reward.points;
+									return (
 									<div
 										key={reward.id}
-										className="flex items-center bg-white rounded-lg border border-gray-200"
+										className="bg-white rounded-lg border border-gray-200 overflow-hidden"
 									>
-										<div className="flex items-center gap-3 flex-1 px-4 py-3">
+										<div className="flex items-center gap-3 px-4 pt-3 pb-2">
 											<span className="text-lg">🎁</span>
 											<span className="flex-1 text-sm text-gray-800">{reward.label}</span>
-											<span className="text-xs text-indigo-500 font-medium">{reward.points}pt</span>
+											<span className={`text-xs font-medium ${achieved ? "text-green-500" : "text-indigo-500"}`}>
+												{achieved ? "達成！" : `${pts}/${reward.points}pt`}
+											</span>
+											<button
+												type="button"
+												onClick={() => openEdit(reward)}
+												className="text-gray-300 hover:text-gray-500 text-lg leading-none"
+											>
+												…
+											</button>
 										</div>
-										<button
-											type="button"
-											onClick={() => openEdit(reward)}
-											className="px-3 py-3 text-gray-300 hover:text-gray-500 text-lg leading-none"
-										>
-											…
-										</button>
+										<div className="h-1.5 bg-gray-100 mx-4 mb-3 rounded-full overflow-hidden">
+											<div
+												className={`h-full rounded-full transition-all duration-500 ${achieved ? "bg-green-400" : "bg-indigo-400"}`}
+												style={{ width: `${progress}%` }}
+											/>
+										</div>
 									</div>
-								))}
-							</div>
+								);
+							})}
+	</div>
 						)}
 						{rewards.length === 0 && (
 							<p className="text-center text-gray-400 text-sm mt-4">ご褒美を設定するとカードにマイルストーンが表示されます</p>

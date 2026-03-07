@@ -1,6 +1,9 @@
-export const COLS = 8;
-export const PTS_PER_SQUARE = 25;
-export const PTS_PER_ROW = COLS * PTS_PER_SQUARE; // 200
+import { getDotArt } from "./dotArt";
+import type { MonthDotArt } from "./dotArt";
+
+export const GRID_SIZE = 24;
+export const TOTAL_SQUARES = GRID_SIZE * GRID_SIZE; // 576
+export const PTS_PER_SQUARE = 5;
 
 export type Reward = {
 	id: string;
@@ -10,47 +13,61 @@ export type Reward = {
 
 export type SquareState = {
 	filled: boolean;
-	reward: Reward | null;
-};
-
-export type RowState = {
-	squares: SquareState[];
+	color: string;
 };
 
 export type PointCardState = {
-	filledSquares: number;
+	filledByPoints: number;
+	preOpened: number;
 	totalSquares: number;
-	rows: RowState[];
+	squares: SquareState[];
+	fillOrder: number[];
 };
 
-export function calcPointCard(currentPoints: number, rewards: Reward[]): PointCardState {
-	const maxPoints = rewards.length > 0
-		? Math.max(...rewards.map((r) => r.points))
-		: 500;
+function getDaysInMonth(year: number, month: number): number {
+	return new Date(year, month, 0).getDate();
+}
 
-	const maxSquareIndex = Math.ceil(maxPoints / PTS_PER_SQUARE) - 1;
-	const totalSquares = maxSquareIndex + 1;
-	const totalRows = Math.ceil(totalSquares / COLS);
-	const filledSquares = Math.floor(currentPoints / PTS_PER_SQUARE);
+export function calcPreOpened(year: number, month: number): number {
+	const days = getDaysInMonth(year, month);
+	const maxFillable = Math.floor((days * 100) / PTS_PER_SQUARE);
+	return Math.max(0, TOTAL_SQUARES - maxFillable);
+}
 
-	const rewardBySquare = new Map<number, Reward>();
-	for (const reward of rewards) {
-		const squareIndex = Math.ceil(reward.points / PTS_PER_SQUARE) - 1;
-		rewardBySquare.set(squareIndex, reward);
+export function calcPointCard(
+	currentPoints: number,
+	_rewards: Reward[],
+	year?: number,
+	month?: number,
+): PointCardState {
+	const now = new Date();
+	const y = year ?? now.getFullYear();
+	const m = month ?? now.getMonth() + 1;
+
+	const dotArt: MonthDotArt = getDotArt(m);
+	const preOpened = calcPreOpened(y, m);
+
+	const filledByPoints = Math.min(
+		Math.floor(currentPoints / PTS_PER_SQUARE),
+		TOTAL_SQUARES - preOpened,
+	);
+	const totalFilled = preOpened + filledByPoints;
+
+	const fillPosition = new Array<number>(TOTAL_SQUARES);
+	for (let i = 0; i < TOTAL_SQUARES; i++) {
+		fillPosition[dotArt.fillOrder[i]] = i;
 	}
 
-	const rows: RowState[] = Array.from({ length: totalRows }, (_, rowIndex) => {
-		const rowStart = rowIndex * COLS;
-		const rowEnd = Math.min(rowStart + COLS, totalSquares);
-		const squares: SquareState[] = Array.from({ length: rowEnd - rowStart }, (_, colIndex) => {
-			const squareIndex = rowStart + colIndex;
-			return {
-				filled: squareIndex < filledSquares,
-				reward: rewardBySquare.get(squareIndex) ?? null,
-			};
-		});
-		return { squares };
-	});
+	const squares: SquareState[] = Array.from({ length: TOTAL_SQUARES }, (_, gridIndex) => ({
+		filled: fillPosition[gridIndex] < totalFilled,
+		color: dotArt.colors[gridIndex],
+	}));
 
-	return { filledSquares, totalSquares, rows };
+	return {
+		filledByPoints,
+		preOpened,
+		totalSquares: TOTAL_SQUARES,
+		squares,
+		fillOrder: dotArt.fillOrder,
+	};
 }
