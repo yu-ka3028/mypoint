@@ -1,98 +1,108 @@
 import { describe, it, expect } from "vitest";
-import { calcPointCard } from "./pointCard";
+import { calcPointCard, calcPreOpened, PTS_PER_SQUARE, TOTAL_SQUARES } from "./pointCard";
+
+const YEAR = 2026;
+const MONTH_MAR = 3; // 31日 → preOpened=0
+const MONTH_FEB = 2; // 28日 → preOpened=16
+
+describe("calcPreOpened", () => {
+	it("3月（31日）はpreOpenedが0", () => {
+		expect(calcPreOpened(YEAR, MONTH_MAR)).toBe(0);
+	});
+
+	it("2月平年（28日）はpreOpenedが16", () => {
+		// maxFillable = floor(28 * 100 / 5) = 560, preOpened = 576 - 560 = 16
+		expect(calcPreOpened(2025, MONTH_FEB)).toBe(16);
+	});
+
+	it("2月閏年（29日）はpreOpenedが0", () => {
+		// maxFillable = floor(29 * 100 / 5) = 580 > 576, preOpened = 0
+		expect(calcPreOpened(2024, MONTH_FEB)).toBe(0);
+	});
+
+	it("4月（30日）はpreOpenedが0", () => {
+		// maxFillable = floor(30 * 100 / 5) = 600 > 576, preOpened = 0
+		expect(calcPreOpened(YEAR, 4)).toBe(0);
+	});
+});
 
 describe("calcPointCard", () => {
-	describe("最終ご褒美 200pt（横1行ぴったり）", () => {
-		const rewards = [{ id: "1", label: "ケーキ", points: 200 }];
-
-		it("totalSquares が 8 になる", () => {
-			const { totalSquares } = calcPointCard(0, rewards);
-			expect(totalSquares).toBe(8);
+	describe("基本構造", () => {
+		it("totalSquares が 576 になる", () => {
+			const { totalSquares } = calcPointCard(0, [], YEAR, MONTH_MAR);
+			expect(totalSquares).toBe(TOTAL_SQUARES);
 		});
 
-		it("行数が 1 になる", () => {
-			const { rows } = calcPointCard(0, rewards);
-			expect(rows).toHaveLength(1);
-		});
-
-		it("1行目が 8 マスになる", () => {
-			const { rows } = calcPointCard(0, rewards);
-			expect(rows[0].squares).toHaveLength(8);
-		});
-
-		it("最終マス（index 7）にご褒美が配置される", () => {
-			const { rows } = calcPointCard(0, rewards);
-			expect(rows[0].squares[7].reward?.label).toBe("ケーキ");
-		});
-
-		it("200pt 達成時に全マス埋まる", () => {
-			const { filledSquares, totalSquares } = calcPointCard(200, rewards);
-			expect(filledSquares).toBe(totalSquares);
+		it("squares が 576 件になる", () => {
+			const { squares } = calcPointCard(0, [], YEAR, MONTH_MAR);
+			expect(squares).toHaveLength(TOTAL_SQUARES);
 		});
 	});
 
-	describe("最終ご褒美 250pt（2行目途中で終わる）", () => {
-		const rewards = [{ id: "1", label: "旅行", points: 250 }];
-
-		it("totalSquares が 10 になる", () => {
-			const { totalSquares } = calcPointCard(0, rewards);
-			expect(totalSquares).toBe(10);
+	describe("3月（preOpened=0）", () => {
+		it("0pt では何も埋まらない", () => {
+			const { filledByPoints, squares } = calcPointCard(0, [], YEAR, MONTH_MAR);
+			expect(filledByPoints).toBe(0);
+			expect(squares.filter((s) => s.filled)).toHaveLength(0);
 		});
 
-		it("行数が 2 になる", () => {
-			const { rows } = calcPointCard(0, rewards);
-			expect(rows).toHaveLength(2);
+		it(`${PTS_PER_SQUARE}pt で 1マス埋まる`, () => {
+			const { filledByPoints } = calcPointCard(PTS_PER_SQUARE, [], YEAR, MONTH_MAR);
+			expect(filledByPoints).toBe(1);
 		});
 
-		it("1行目が 8 マスになる", () => {
-			const { rows } = calcPointCard(0, rewards);
-			expect(rows[0].squares).toHaveLength(8);
+		it("100pt で 20マス埋まる", () => {
+			const { filledByPoints } = calcPointCard(100, [], YEAR, MONTH_MAR);
+			expect(filledByPoints).toBe(20);
 		});
 
-		it("2行目が 2 マスになる（余白なし）", () => {
-			const { rows } = calcPointCard(0, rewards);
-			expect(rows[1].squares).toHaveLength(2);
-		});
-
-		it("最終マス（index 9）にご褒美が配置される", () => {
-			const { rows } = calcPointCard(0, rewards);
-			expect(rows[1].squares[1].reward?.label).toBe("旅行");
-		});
-
-		it("250pt 達成時に全マス埋まる", () => {
-			const { filledSquares, totalSquares } = calcPointCard(250, rewards);
-			expect(filledSquares).toBe(totalSquares);
+		it("2880pt（5pt×576）で全マスが埋まる", () => {
+			const { filledByPoints, squares } = calcPointCard(
+				PTS_PER_SQUARE * TOTAL_SQUARES,
+				[],
+				YEAR,
+				MONTH_MAR,
+			);
+			expect(filledByPoints).toBe(TOTAL_SQUARES);
+			expect(squares.filter((s) => s.filled)).toHaveLength(TOTAL_SQUARES);
 		});
 	});
 
-	describe("最終ご褒美 10000pt", () => {
-		const rewards = [{ id: "1", label: "海外旅行", points: 10000 }];
-
-		it("totalSquares が 400 になる", () => {
-			const { totalSquares } = calcPointCard(0, rewards);
-			expect(totalSquares).toBe(400);
+	describe("2月平年（preOpened=16）", () => {
+		it("0pt でも 16マス埋まっている", () => {
+			const { preOpened, squares } = calcPointCard(0, [], 2025, MONTH_FEB);
+			expect(preOpened).toBe(16);
+			expect(squares.filter((s) => s.filled)).toHaveLength(16);
 		});
 
-		it("行数が 50 になる", () => {
-			const { rows } = calcPointCard(0, rewards);
-			expect(rows).toHaveLength(50);
+		it("ポイントで埋められる最大は 560マス", () => {
+			const { filledByPoints } = calcPointCard(
+				PTS_PER_SQUARE * TOTAL_SQUARES,
+				[],
+				2025,
+				MONTH_FEB,
+			);
+			expect(filledByPoints).toBe(TOTAL_SQUARES - 16);
+		});
+	});
+
+	describe("ランダム埋め順", () => {
+		it("fillOrder は 576 件", () => {
+			const { fillOrder } = calcPointCard(0, [], YEAR, MONTH_MAR);
+			expect(fillOrder).toHaveLength(TOTAL_SQUARES);
 		});
 
-		it("全行が 8 マスになる", () => {
-			const { rows } = calcPointCard(0, rewards);
-			for (const row of rows) {
-				expect(row.squares).toHaveLength(8);
-			}
+		it("fillOrder は 0〜575 の各値を1回ずつ含む", () => {
+			const { fillOrder } = calcPointCard(0, [], YEAR, MONTH_MAR);
+			expect(new Set(fillOrder).size).toBe(TOTAL_SQUARES);
 		});
+	});
 
-		it("最終マス（index 399）にご褒美が配置される", () => {
-			const { rows } = calcPointCard(0, rewards);
-			expect(rows[49].squares[7].reward?.label).toBe("海外旅行");
-		});
-
-		it("10000pt 達成時に全マス埋まる", () => {
-			const { filledSquares, totalSquares } = calcPointCard(10000, rewards);
-			expect(filledSquares).toBe(totalSquares);
+	describe("squaresの色", () => {
+		it("埋まったマスは color が '#f3f4f6' でない（ドット絵カラー）", () => {
+			const { squares } = calcPointCard(PTS_PER_SQUARE, [], YEAR, MONTH_MAR);
+			const filled = squares.filter((s) => s.filled);
+			expect(filled.every((s) => s.color !== "#f3f4f6")).toBe(true);
 		});
 	});
 });
