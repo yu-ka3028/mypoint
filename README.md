@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# mypoint
 
-## Getting Started
+ポイントカード感覚で日常タスクをこなすタスク管理アプリ。
+ご褒美を設定してポイントを貯める過程のワクワク感が体験できます。
 
-First, run the development server:
+**URL**: https://mypoint-three.vercel.app/login
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 機能
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Google ログイン**（Supabase Auth）
+- **タスク管理**（毎日ルーティン / 毎週ルーティン / 突発タスク）
+- **ポイント自動計算**（タスク種別・登録数に応じた均等配分）
+- **ポイントカード**（ドット絵リビール方式・24×24）
+- **ご褒美設定**（達成マイルストーンとして表示）
+- **タスク完了演出**（トースト通知・ポイントカードタブバッジ・スタンプアニメーション）
+- **デイリーリセット**（JST基準、遅延生成方式）
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 今後の展開
 
-To learn more about Next.js, take a look at the following resources:
+| 機能 | 内容 |
+|------|------|
+| ランキング | 累計ポイント上位5名の公開ランキング |
+| ドット絵の種類追加 | ポイントカードのドット絵デザインを選択できるように |
+| 統計・グラフ | 週別・月別のポイント推移 |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 技術スタック
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| カテゴリ | 技術 |
+|---------|------|
+| フレームワーク | Next.js 15（App Router） |
+| 言語 | TypeScript |
+| スタイリング | TailwindCSS + shadcn/ui |
+| DB / Auth | Supabase（PostgreSQL + Google OAuth） |
+| Linter / Formatter | Biome |
+| デプロイ | Vercel |
