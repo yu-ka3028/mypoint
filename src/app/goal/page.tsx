@@ -264,7 +264,9 @@ export default function GoalPage() {
 									<span className="text-sm text-gray-700">{editStepForm.scheduled_date}</span>
 									<div className="flex gap-3">
 										<button type="button" onClick={() => setShowDatePicker(true)} className="text-xs text-indigo-500">変更</button>
-										<button type="button" onClick={() => { setEditStepForm((f) => ({ ...f, scheduled_date: "" })); setShowDatePicker(false); }} className="text-xs text-red-400">削除</button>
+										{!editingStep?.is_milestone && (
+											<button type="button" onClick={() => { setEditStepForm((f) => ({ ...f, scheduled_date: "" })); setShowDatePicker(false); }} className="text-xs text-red-400">削除</button>
+										)}
 									</div>
 								</div>
 							) : showDatePicker ? (
