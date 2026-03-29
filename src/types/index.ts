@@ -26,6 +26,26 @@ export type WeeklyRoutineCompletion = {
 	completed_date: string;
 };
 
+export type Goal = {
+	id: string;
+	user_id: string;
+	name: string;
+	started_at: string;
+	target_date: string;
+	completed_at: string | null;
+	created_at: string;
+};
+
+export type GoalStep = {
+	id: string;
+	goal_id: string;
+	title: string;
+	order: number;
+	scheduled_date: string | null;
+	is_milestone: boolean;
+	completed_at: string | null;
+};
+
 export type UserProfile = {
 	id: string;
 	display_name: string;
