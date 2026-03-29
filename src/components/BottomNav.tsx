@@ -48,6 +48,17 @@ export function BottomNav() {
 					</span>
 					カード
 				</Link>
+				<Link
+					href="/goal"
+					className={`flex-1 flex flex-col items-center py-3 text-xs gap-1 ${
+						pathname === "/goal" ? "text-indigo-600" : "text-gray-400"
+					}`}
+				>
+					<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
+					</svg>
+					ゴール
+				</Link>
 			</div>
 		</nav>
 	);
